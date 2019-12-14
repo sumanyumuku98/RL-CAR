@@ -19,7 +19,7 @@ if __name__ == "__main__":
     results = defaultdict(list)
     debug = False
 
-    for l in range(10):
+    for l in range(1, 10):
         for trial in range(trials):
             env = CacheEnv(eps_len=l)
             s = env.reset()
@@ -35,7 +35,8 @@ if __name__ == "__main__":
                     print(observation)
                     print(env.pages, f"reward: {r}\n")
             print(f"Total hits: {env.total_hits}")
-            results[l].append(env.total_hits)
+            percentage = 100 * env.total_hits / l
+            results[l].append(percentage)
 
     with open("results/lru.pkl", "wb") as handle:
         pickle.dump(results, handle)
