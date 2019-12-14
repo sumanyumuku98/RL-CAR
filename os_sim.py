@@ -4,12 +4,12 @@ import pandas as pd
 import pickle
 from collections import defaultdict
 
+P = [0.3, 0.3, 0.2, 0.15, 0.05]
 
 class OS():
     """
     Simulate a simple OS cache handler
     """
-    P = [0.3, 0.3, 0.2, 0.15, 0.05]
     def __init__(self, limit, n_pages):
         super(OS, self).__init__()
         self.limit = limit

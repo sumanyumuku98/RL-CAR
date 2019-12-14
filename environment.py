@@ -24,6 +24,7 @@ class CacheEnv(gym.Env):
         self.total_hits = 0
         self.timestep = 0 #counter; if this reaches eps_len, return done=True
         self.done = False
+        self.new_page_id = -1
 
     def step(self, action, test=False):
         """
@@ -35,6 +36,7 @@ class CacheEnv(gym.Env):
         if self.timestep >= self.eps_len:
             self.done = True #Episode reached its end
         new_page_id = self.os.get_id() #This is page requested by the OS
+        self.new_page_id = new_page_id #Store for debugging
         reward, hit = self.allocate_cache(action, new_page_id)
         if hit:
             observation = f"This was a hit, OS asked for: {new_page_id}"
@@ -49,13 +51,11 @@ class CacheEnv(gym.Env):
         self.done = False
         return self.pages
 
-
     def render(self, mode='human'):
         pass
 
     def close(self):
         pass
-
 
     def if_allocated(self, id):
         """
@@ -74,13 +74,22 @@ class CacheEnv(gym.Env):
         id = int(id)
         hit = False #Page hit or not?
         self.NT[id] += 1
+        # For all the pages except id, increament their lu counter
+        for page_id in self.pages.keys():
+            if page_id == id:
+                continue
+            else:
+                self.pages[page_id][0] += 1
+                # new_page = self.pages[page_id]
+                # new_page = [new_page[0]+1, new_page[1]]
+                # self.pages[page_id] = new_page
+
         if action not in self.pages.keys():
             #Agent asked to remove a page that wasn't even allocated
             return HEAVY_NEG_R, hit
 
         if self.if_allocated(id):
             hit = True #HIT!
-            print(self.pages)
             page = self.pages[id]
             page[0] = 0
             page[1] += 1
@@ -90,6 +99,7 @@ class CacheEnv(gym.Env):
             self.pages.pop(action) #Remove page 'action'
             self.pages[id] = [0, self.NT[id]] #Add page 'id'
             reward = NEG_REW #neg reward for no hit
+
         return reward, hit
 
 if __name__ == "__main__":
