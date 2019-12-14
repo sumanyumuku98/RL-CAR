@@ -1,0 +1,97 @@
+import gym
+import numpy as np
+import pandas as pd
+import pickle
+from collections import defaultdict
+from os_sim import OS
+
+LIMIT = 3
+N_PAGES = 5
+EPS_LEN = 3
+POS_REW = 1
+NEG_REW = -1
+HEAVY_NEG_R = -10
+
+class CacheEnv(gym.Env):
+    metadata = {'render.modes': ['human']}
+    def __init__(self, limit=LIMIT, n_pages=N_PAGES, eps_len=EPS_LEN):
+        super(CacheEnv, self).__init__()
+        self.limit = limit
+        self.n_pages = n_pages
+        self.eps_len = eps_len
+        self.os = OS(limit, n_pages)
+        self.pages, self.NT = self.os.init_pages()
+        self.total_hits = 0
+        self.timestep = 0 #counter; if this reaches eps_len, return done=True
+        self.done = False
+
+    def step(self, action, test=False):
+        """
+        First OS will send a page id (randomly from distribution P)
+        based on the action choose to evict a page
+        allocate this page id cache inplace of the 'action' id
+        """
+        self.timestep += 1
+        if self.timestep >= self.eps_len:
+            self.done = True #Episode reached its end
+        new_page_id = self.os.get_id() #This is page requested by the OS
+        reward, hit = self.allocate_cache(action, new_page_id)
+        if hit:
+            observation = f"This was a hit, OS asked for: {new_page_id}"
+            self.total_hits += 1
+        else:
+            observation = f"This was not a hit, OS asked for: {new_page_id}"
+        return self.pages, reward, self.done, observation
+
+    def reset(self):
+        self.pages, self.NT = self.os.init_pages()
+        self.total_hits = 0 #Intuitive
+        self.done = False
+        return self.pages
+
+
+    def render(self, mode='human'):
+        pass
+
+    def close(self):
+        pass
+
+
+    def if_allocated(self, id):
+        """
+        returns true if 'id' is allocated a cache currently
+        """
+        if id in self.pages.keys():
+            return True
+        return False
+
+    def allocate_cache(self, action, id):
+        """
+        remove page 'action'
+        add page 'id'
+        """
+        action = int(action)
+        id = int(id)
+        hit = False #Page hit or not?
+        self.NT[id] += 1
+        if action not in self.pages.keys():
+            #Agent asked to remove a page that wasn't even allocated
+            return HEAVY_NEG_R, hit
+
+        if self.if_allocated(id):
+            hit = True #HIT!
+            print(self.pages)
+            page = self.pages[id]
+            page[0] = 0
+            page[1] += 1
+            self.pages[id] = page
+            reward = POS_REW #pos reward for hit
+        else:
+            self.pages.pop(action) #Remove page 'action'
+            self.pages[id] = [0, self.NT[id]] #Add page 'id'
+            reward = NEG_REW #neg reward for no hit
+        return reward, hit
+
+if __name__ == "__main__":
+    env = CacheEnv()
+    env.reset()
