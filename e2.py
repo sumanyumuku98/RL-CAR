@@ -36,8 +36,22 @@ class CacheEnv(gym.Env):
         self.timestep += 1
         if self.timestep >= self.eps_len:
             self.done = True #Episode reached its end
-        new_page_id = self.os.get_id() #This is page requested by the OS
-        self.new_page_id = new_page_id #Store for debugging
+        
+        reward = 0
+        hit = True
+        while(hit):
+            new_page_id = self.os.get_id() #This is page requested by the OS
+            self.new_page_id = new_page_id #Store for debugging
+            r, hit = self.allocate_cache(action, new_page_id)
+            reward += r
+        
+        r, hit = self.allocate_cache(action, new_page_id)
+
+        
+
+
+
+
         reward, hit = self.allocate_cache(action, new_page_id)
         if hit:
             observation = f"This was a hit, OS asked for: {new_page_id}"
@@ -93,13 +107,6 @@ class CacheEnv(gym.Env):
                 continue
             else:
                 self.pages[page_id][0] += 1
-                # new_page = self.pages[page_id]
-                # new_page = [new_page[0]+1, new_page[1]]
-                # self.pages[page_id] = new_page
-
-        # if action not in self.pages.keys():
-        #     #Agent asked to remove a page that wasn't even allocated
-        #     return HEAVY_NEG_R, hit
 
         if self.if_allocated(id):
             hit = True #HIT!
