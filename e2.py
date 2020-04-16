@@ -14,7 +14,7 @@ HEAVY_NEG_R = -10
 
 class CacheEnv(gym.Env):
     metadata = {'render.modes': ['human']}
-    def __init__(self, limit=LIMIT, n_pages=N_PAGES, eps_len=EPS_LEN):
+    def __init__(self, limit=LIMIT, n_pages=N_PAGES, eps_len=EPS_LEN, human=False):
         super(CacheEnv, self).__init__()
         self.limit = limit
         self.n_pages = n_pages
@@ -25,6 +25,7 @@ class CacheEnv(gym.Env):
         self.done = False
         self.new_page_id = -1
         self.action_space_n = limit
+        self.human = human
 
     def step(self, action, test=False):
         """
@@ -84,8 +85,13 @@ class CacheEnv(gym.Env):
             return True
         return False
 
+    def toggle_human(self):
+        self.human = not self.human
+
     def nn_state(self):
         """returns state in numpy format for neural net inpu"""
+        if self.human:
+            return self.pages
         state = []
         for k in self.pages:
             vals = self.pages[k]
