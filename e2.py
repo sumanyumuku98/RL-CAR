@@ -103,6 +103,10 @@ class CacheEnv(gym.Env):
     def toggle_human(self):
         self.human = not self.human
 
+    @staticmethod
+    def normalize(arr):
+        return arr/arr.sum()
+    
     def nn_state(self):
         """returns state in numpy format for neural net inpu"""
         if self.human:
@@ -112,7 +116,7 @@ class CacheEnv(gym.Env):
             vals = self.pages[k]
             state.append(vals[0]) #Flatten
             state.append(vals[1]) #Flatten
-        return np.array(state)     
+        return self.normalize(np.array(state))     
 
     def print_cache(self):
         print(self.pages)       
