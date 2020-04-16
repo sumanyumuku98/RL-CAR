@@ -2,7 +2,7 @@ import gym
 import numpy as np
 import pandas as pd
 import pickle
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from os_sim import OS
 
 LIMIT = 3
@@ -14,7 +14,7 @@ HEAVY_NEG_R = -10
 
 class CacheEnv(gym.Env):
     metadata = {'render.modes': ['human']}
-    def __init__(self, limit=LIMIT, n_pages=N_PAGES, eps_len=EPS_LEN, human=False):
+    def __init__(self, limit=LIMIT, n_pages=N_PAGES, eps_len=EPS_LEN, human=False, verbose=False):
         super(CacheEnv, self).__init__()
         self.limit = limit
         self.n_pages = n_pages
@@ -26,6 +26,7 @@ class CacheEnv(gym.Env):
         self.new_page_id = -1
         self.action_space_n = limit
         self.human = human
+        self.verbose = verbose
 
     def step(self, action, test=False):
         """
@@ -39,18 +40,33 @@ class CacheEnv(gym.Env):
             self.done = True #Episode reached its end
         
         
-        _, hit = self.allocate_cache(self.new_page_id, action) #we took action to make space for this page
-        assert(not hit), "Something weird happened just now..."
+        if self.verbose:
+            self.print_cache()
+        
+        self.allocate_cache(self.new_page_id, action) #we took action to make space for this page
+        
+        if self.verbose:
+            print(f"Allocated {self.new_page_id} at index {action}")
+            self.print_cache()
 
         reward = 0
         nhits = 0
         hit = True
-        while(hit): #until page miss occurs
+        while(True): #until page miss occurs
             new_page_id = self.os.get_id() #This is page requested by the OS
             self.new_page_id = new_page_id #Store for debugging
-            r, hit = self.allocate_cache(new_page_id, ignore_miss=True)
-            reward += r
-            nhits += 1
+            if self.verbose:
+                print(f"== Page: {new_page_id} requested!")
+            if self.is_allocated(new_page_id):
+                if self.verbose:
+                    print(f"Page: {new_page_id} is allocated. Hit!")
+                r = self.access_page(new_page_id)
+                reward += r
+                nhits += 1
+            else:
+                if self.verbose:
+                    print(f"Page: {new_page_id} Not allocated!! MISS!")
+                break        
 
         observation = f"There were {nhits} hits."
         return self.nn_state(), reward, self.done, observation
@@ -70,14 +86,13 @@ class CacheEnv(gym.Env):
         return np.random.choice(left_pages)
 
 
-
     def render(self, mode='human'):
         pass
 
     def close(self):
         pass
 
-    def if_allocated(self, id):
+    def is_allocated(self, id):
         """
         returns true if 'id' is allocated a cache currently
         """
@@ -97,41 +112,54 @@ class CacheEnv(gym.Env):
             vals = self.pages[k]
             state.append(vals[0]) #Flatten
             state.append(vals[1]) #Flatten
-        return np.array(state)        
+        return np.array(state)     
 
-    def allocate_cache(self, id, action=None, ignore_miss=False):
-        """
-        remove page at 'action'
-        add page 'id'
-        use `ignore_miss` in cases when you want to return `false` for hit and not replace cache.
-        """
-        id = int(id)
-        hit = False #Page hit or not?
-        self.NT[id] += 1
-        # For all the pages except id, increament their lu counter
+    def print_cache(self):
+        print(self.pages)       
+
+
+    def access_page(self, id):
+        """change counters of a page requested that is currently in cache"""
+        hit = True #HIT!
+        page = self.pages[id]
+        self.pages[id][0] = 1 #Last accessed 1 timestep ago
+        self.pages[id][1] += 1 #Increase local fu counter
+        self.NT[id] += 1 #Increase global fu counter
+        reward = POS_REW #pos reward for hit
+
+        #For all the pages except id, increament their lu counter
         for page_id in self.pages.keys():
             if page_id == id:
                 continue
             else:
                 self.pages[page_id][0] += 1
 
-        if self.if_allocated(id):
-            hit = True #HIT!
-            page = self.pages[id]
-            page[0] = 0
-            page[1] += 1
-            self.pages[id] = page
-            reward = POS_REW #pos reward for hit
-        elif ignore_miss:
-            return NEG_REW, hit    
-        else:
-            action = int(action)
-            key = list(self.pages.keys())[action]
-            self.pages.pop(key) #Remove page 'action'
-            self.pages[id] = [0, self.NT[id]] #Add page 'id' (load how frequently this page is used from a global counter: NT)
-            reward = NEG_REW #neg reward for no hit
+        return reward
 
-        return reward, hit
+    def allocate_cache(self, id, action=None):
+        """
+        remove page at 'action'
+        add page 'id'
+        """
+        id = int(id)
+        self.NT[id] += 1 #increase global fu counter
+
+        #For all the pages except id, increament their lu counter
+        for page_id in self.pages.keys():
+            if page_id == id:
+                continue
+            else:
+                self.pages[page_id][0] += 1
+
+
+        action = int(action)
+        old_key = list(self.pages.keys())[action] #the page at index 'action' which will be replaced
+        new_key = id #new page whose id is id
+        #update the dictionary to contain new page's counter (update value)
+        new_value = [1, self.NT[id]]
+        #update the dictionary to contain new page's key (replace key)
+        self.pages = dict(OrderedDict([(new_key, new_value) if k == old_key else (k, v) for k, v in self.pages.items()]))
+        
 
 if __name__ == "__main__":
     env = CacheEnv()
