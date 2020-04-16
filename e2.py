@@ -21,7 +21,6 @@ class CacheEnv(gym.Env):
         self.eps_len = eps_len
         self.os = OS(limit, n_pages)
         self.pages, self.NT = self.os.init_pages()
-        self.total_hits = 0
         self.timestep = 0 #counter; if this reaches eps_len, return done=True
         self.done = False
         self.new_page_id = -1
@@ -29,45 +28,47 @@ class CacheEnv(gym.Env):
 
     def step(self, action, test=False):
         """
-        First OS will send a page id (randomly from distribution P)
-        based on the action choose to evict a page
-        allocate this page id cache inplace of the 'action' id
+        OS just asked for a page not in memory (stored in self.new_page_id).
+        Replace page at `action` index to make space for the page. 
+        Then keep asking OS for more pages until a miss occurs. 
+        For ever hit meanwhile, increase positive reward by 1.
         """
         self.timestep += 1
         if self.timestep >= self.eps_len:
             self.done = True #Episode reached its end
         
+        
+        _, hit = self.allocate_cache(self.new_page_id, action) #we took action to make space for this page
+        assert(not hit), "Something weird happened just now..."
+
         reward = 0
+        nhits = 0
         hit = True
-        while(hit):
+        while(hit): #until page miss occurs
             new_page_id = self.os.get_id() #This is page requested by the OS
             self.new_page_id = new_page_id #Store for debugging
-            r, hit = self.allocate_cache(action, new_page_id)
+            r, hit = self.allocate_cache(new_page_id, ignore_miss=True)
             reward += r
-        
-        r, hit = self.allocate_cache(action, new_page_id)
+            nhits += 1
 
-        
-
-
-
-
-        reward, hit = self.allocate_cache(action, new_page_id)
-        if hit:
-            observation = f"This was a hit, OS asked for: {new_page_id}"
-            self.total_hits += 1
-        else:
-            observation = f"This was not a hit, OS asked for: {new_page_id}"
-        # return self.pages, reward, self.done, observation
+        observation = f"There were {nhits} hits."
         return self.nn_state(), reward, self.done, observation
 
     def reset(self):
         self.timestep = 0
-        self.pages, self.NT = self.os.init_pages()
-        self.total_hits = 0 #Intuitive
+        self.pages, self.NT = self.os.init_pages() #self.NT keeps record of number of times a page was accessed. This info might be lost after page is removed so its saved here.
         self.done = False
+        self.new_page_id = self.page_not_in_memory() #this will cause a miss and make agent choose an action for step.
         # return self.pages
         return self.nn_state()
+
+    def page_not_in_memory(self):
+        current_pages = set(self.pages.keys())
+        all_pages = set([i for i in range(self.n_pages)])    
+        left_pages = list(all_pages-current_pages)
+        return np.random.choice(left_pages)
+
+
 
     def render(self, mode='human'):
         pass
@@ -92,12 +93,12 @@ class CacheEnv(gym.Env):
             state.append(vals[1]) #Flatten
         return np.array(state)        
 
-    def allocate_cache(self, action, id):
+    def allocate_cache(self, id, action=None, ignore_miss=False):
         """
         remove page at 'action'
         add page 'id'
+        use `ignore_miss` in cases when you want to return `false` for hit and not replace cache.
         """
-        action = int(action)
         id = int(id)
         hit = False #Page hit or not?
         self.NT[id] += 1
@@ -115,10 +116,13 @@ class CacheEnv(gym.Env):
             page[1] += 1
             self.pages[id] = page
             reward = POS_REW #pos reward for hit
+        elif ignore_miss:
+            return NEG_REW, hit    
         else:
+            action = int(action)
             key = list(self.pages.keys())[action]
             self.pages.pop(key) #Remove page 'action'
-            self.pages[id] = [0, self.NT[id]] #Add page 'id'
+            self.pages[id] = [0, self.NT[id]] #Add page 'id' (load how frequently this page is used from a global counter: NT)
             reward = NEG_REW #neg reward for no hit
 
         return reward, hit
